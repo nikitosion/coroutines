@@ -1,0 +1,36 @@
+name: race-proof
+on:
+  workflow_dispatch:
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Проверить сборку
+        run: bash ./gradlew :proof:testClasses
+      - name: Серия против given/
+        id: given
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ./gradlew :proof:raceProof -Pkfd.target=given --console=plain 2>&1 | tee given.log
+      - name: Проверить ожидаемый контрпример
+        env:
+          GIVEN_OUTCOME: ${{ steps.given.outcome }}
+        shell: bash
+        run: |
+          test "$GIVEN_OUTCOME" = failure
+          grep -Eq '^ *RACE-PROOF: (9[0-9]|100)/100 runs failed on given/$' given.log
+      - name: Серия против fixed/
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ./gradlew :proof:raceProof -Pkfd.target=fixed --console=plain 2>&1 | tee fixed.log
+          grep -Eq '^ *RACE-PROOF: 0/100 runs failed on fixed/$' fixed.log
